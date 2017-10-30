@@ -1,0 +1,7 @@
+
+@interface SendMessageTest : NSObject
+{
+}
+
+@end
+
