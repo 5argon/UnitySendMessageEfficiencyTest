@@ -135,3 +135,82 @@ Like 1-5% faster from my guess. I don't know, but I think in `UnitySendMessage`,
 For native plugin, make all the 3 parameters of `UnitySendMessage(gameObjectName,methodName,message)` as shortest as possible. The hierarchy position of the message receiver GameObject does not matter.
 
 ...this might cause problems if everyone starts telling their user to "name the object as short as possible, like just `A`!"  and then we might have a name conflict from different plugins. (haha)
+
+# Extra Round : UnitySendMessage vs. pointer
+
+There is a way to avoid `UnitySendMessage`'s 3 strings, that is passing the function pointer directly. I have add one more button that does this comparison.
+
+## How it works
+
+C# Side (managed)
+
+```csharp
+    [DllImport("__Internal")]
+    private static extern void _PointerHackTest(ActionDelegate actionDelegate, string message);
+
+    [MonoPInvokeCallback(typeof(ActionDelegate))]
+    public static void PointerHackTargetStatic(string message)
+    {
+	Debug.Log("iOS says : " + message);
+    }
+
+    public delegate void ActionDelegate(string message);
+
+    public void StartPointerHackTest()
+    {
+	_PointerHackTest(PointerHackTargetStatic, longMessage);
+    }
+```
+
+Objective-C Side (unmanaged)
+```obj-c
+    typedef void (*ActionDelegate)(const char* message);
+
+    void _PointerHackTest(ActionDelegate actionDelegate) {
+         actionDelegate("hey");
+    }
+```
+
+1. The downside is that the call back method must be static. It can't be an instance method like `UnitySendMessage`. On the contrary, the `UnitySendMessage` way must be an instance method. If it was a static a log message will says no receiver. If you try to use a non-static you will get this :
+
+![non-static](githubpic/nostatic1.png)
+
+Or if you forgot to put that attribute you will get this :
+
+![non-static2](githubpic/nostatic2.png)
+
+2. Now you can have whatever method signature you want. No need to encrypt the answer as string.
+
+## Results (2)
+
+I have use the `longMessage` to call the pointer way vs. this :
+
+
+```csharp
+    //an instance version so UnitySendMessage can find it
+    public void PointerHackTarget(string message)
+    {
+        counter++;
+    }
+
+.
+.
+.
+
+	_NativeSendMessage(gameObject.name,"PointerHackTarget", longMessage);
+
+```
+
+The result of the 5,000,000 times call test x 3 times in a row is : 
+
+**POINTER** : 27.09367, 27.66718, 27.46549 (seconds)
+
+**UNITY SEND MESSAGE** : 41.17936, 41.66581, 42.94591 (seconds)
+
+You have already know the 40s performance from the table. The pointer way is almost 2x faster.
+
+## Summary (2)
+
+Actually, for calling back from native to C# let's ditch the `UnitySendMessage` altogether and use the pointer way as much as possible. (haha)
+
+If you need to reach a specific GameObject then you can't avoid `UnitySendMessage`. If it can be a static then you should use the pointer way.
